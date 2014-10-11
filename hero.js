@@ -24,15 +24,15 @@ var HERO_FOCUSED_ATTACK_DAMAGE = 10;
 var HEALTH_WELL_HEAL_AMOUNT = 30;
 var HERO_HEAL_AMOUNT = 40;
 
-var SCORE_NORMALIZE = Math.log(HERO_ATTACK_DAMAGE);
 var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
-var MAX_DEPTH = 1;
+var MAX_DEPTH = 6;
 
 
 function Status(status) {
   'use strict';
   // Simplification of hero's status
   // status parameter may be a Hero object or a Status object
+  this.code = status.code || ((status.getCode !== 'undefined')?status.getCode():'xx');
   this.team = status.team;
   this.distanceFromTop = status.distanceFromTop;
   this.distanceFromLeft = status.distanceFromLeft;
@@ -40,10 +40,33 @@ function Status(status) {
   this.healthGiven = status.healthGiven;
   this.livesSaved = status.livesSaved || 0;
   this.minesCaptured = status.minesCaptured;
-  this.minesOwned = status.minesOwned || {};
+  this.minesOwned = JSON.parse(JSON.stringify(status.minesOwned || {}));
   this.damageDone = status.damageDone;
   this.killCount = status.killCount || (status.heroesKilled?status.heroesKilled.length:0);
   this.gravesRobbed = status.gravesRobbed; // Why do we care?
+  this._score = null;
+  this.score = function () {
+    if (this._score === null) {
+      this._score = calculateStatusScore(this);
+    }
+    return this._score;
+  }
+}
+
+function calculateStatusScore(status) {
+  'use strict';
+  var totalScore = 0;
+  // Win > alive > killCount > minesCaptured > healthGiven > damageDone
+  if (status.health <= 0) {
+    return -Infinity;
+  }
+  totalScore += status.health;              // Being healthy is good
+  totalScore += status.killCount * 100;     // 100 per kill
+  totalScore += status.livesSaved * 100;    // 100 per life saved
+  totalScore += status.minesCaptured * 50;  // 50 per mine
+  totalScore += status.healthGiven;         // 10~40 per heal
+  totalScore += status.damageDone;          // 10~30 per attack
+  return totalScore;
 }
 
 function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, team) {
@@ -68,99 +91,111 @@ function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, t
   return adjacent;
 }
 
-function calculateStatusScore(status) {
-  'use strict';
-  var totalScore = 0;
-  // Win > alive > killCount > healthGiven > damageDone > minesCaptured
-  if (status.health <= 0) {
-    return -Infinity;
-  }
-  totalScore += status.killCount * 100;
-  totalScore += status.livesSaved * 100;
-  totalScore += Math.log(status.healthGiven * 1.5 + 1) / SCORE_NORMALIZE;
-  totalScore += Math.log(status.damageDone + 1) / SCORE_NORMALIZE;
-  totalScore += status.minesCaptured * 50;
-  return totalScore;
-}
-
 function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth) {
   'use strict';
   // Gets the tile at the location that the hero wants to go to
   var status = new Status(startingStatus);
-  var tile = helpers.getTileNearby(board, status.distanceFromTop, status.distanceFromLeft, direction);
+  var tile = (direction !== 'Stay')?helpers.getTileNearby(board, status.distanceFromTop, status.distanceFromLeft, direction):board.tiles[status.distanceFromTop][status.distanceFromLeft];
+  var d = +depth + 1;
+  var action = '';
   var adjacentEnemies, i;
 
-  if (--depth < 0 || startingStatus.health <= 0) {
-    return calculateStatusScore(startingStatus);
+  // Quit recursion if we hit a hard stop
+  if (d === MAX_DEPTH || startingStatus.health <= 0 || tile === false) {
+    return 0;
   }
 
-  console.log('Testing:', direction);
-  if (direction !== 'Stay') {
-    // If tile is not on the board (invalid coordinates), don't move
-    if (tile === false) {
-      tile = board.tiles[status.distanceFromTop][status.distanceFromLeft];
-      console.log('  invalid position, must stay');
+  if (direction === 'Stay') {
+    action = 'Stay';
 
+  } else {
     // Determine results of the move
-    } else {
-      console.log('  ' + tile.type);
-      if (tile.type === 'Unoccupied') {
-        status.distanceFromTop = tile.distanceFromTop;
-        status.distanceFromLeft = tile.distanceFromLeft;
+    if (tile.type === 'Unoccupied') {
+      status.distanceFromTop = tile.distanceFromTop;
+      status.distanceFromLeft = tile.distanceFromLeft;
+      action = 'Walk';
 
-      } else if (tile.subType === 'Bones') {
-        status.gravesRobbed++;
-        status.distanceFromTop = tile.distanceFromTop;
-        status.distanceFromLeft = tile.distanceFromLeft;
+    } else if (tile.subType === 'Bones') {
+      status.gravesRobbed++;
+      status.distanceFromTop = tile.distanceFromTop;
+      status.distanceFromLeft = tile.distanceFromLeft;
+      action = 'Walk';
 
-      } else if (tile.type === 'DiamondMine') {
-        console.log('DiamondMine test:', JSON.stringify(status.minesOwned), !status.minesOwned.hasOwnProperty(tile.id));
-        if (!status.minesOwned.hasOwnProperty(tile.id)) {
-          status.health -= DIAMOND_MINE_CAPTURE_DAMAGE;
-          status.minesCaptured++;
-          status.minesOwned[tile.id] = true;
+    } else if (tile.type === 'DiamondMine') {
+      if (!status.minesOwned.hasOwnProperty(tile.id)) {
+        status.health -= DIAMOND_MINE_CAPTURE_DAMAGE;
+        status.minesCaptured++;
+        status.minesOwned[tile.id] = true;
+        action = 'ClaimMine';
+      } else {
+        action = 'ERROR: Attempted to reclaim owned mine';
+      }
+
+
+    } else if (tile.type === 'HealthWell') {
+      action = 'Cure ' + (Math.min(status.health + HEALTH_WELL_HEAL_AMOUNT, 100) - status.health);
+      status.health += HEALTH_WELL_HEAL_AMOUNT;
+      status.health = Math.min(status.health, 100); // Ensure we are accurate about how much healing is done
+
+    } else if (tile.type === 'Hero' && tile.getCode() !== status.code) {
+      if (tile.team !== status.team) {
+        status.damageDone += HERO_FOCUSED_ATTACK_DAMAGE;
+        action = 'Focused';
+        if (tile.health <= (HERO_FOCUSED_ATTACK_DAMAGE + HERO_ATTACK_DAMAGE)  && tile.health > HERO_ATTACK_DAMAGE) {
+          // Increment kill count gained from the focused attack
+          status.killCount++;
+          action += ' K';
         }
-
-      } else if (tile.type === 'HealthWell') {
-        status.health += HEALTH_WELL_HEAL_AMOUNT;
-        status.health = Math.min(status.health, 100); // Ensure we are accurate about how much healing is done
-
-      } else if (tile.type === 'Hero') {
-        if (tile.team !== status.team) {
-          status.damageDone += HERO_FOCUSED_ATTACK_DAMAGE;
-          if (tile.health <= (HERO_FOCUSED_ATTACK_DAMAGE + HERO_ATTACK_DAMAGE)  && tile.health > HERO_ATTACK_DAMAGE) {
-            // Increment kill count gained from the focused attack
-            status.killCount++;
-          }
-        } else {
-          status.healthGiven += Math.min(HERO_HEAL_AMOUNT + tile.health, 100) - tile.health; // Ensure we are accurate about how much healing is done
-          adjacentEnemies = getAdjacentEnemies(helpers, board, tile.distanceFromTop, tile.distanceFromLeft, status.team);
-          // Count lives saved as those that are in immediate danger of being attacked and wouldn't survive it
-          // TODO: Improve this estimate by looking at enemies that could move and then still do damage
-          if (tile.health <= adjacentEnemies * (HERO_FOCUSED_ATTACK_DAMAGE + HERO_ATTACK_DAMAGE)) {
-            status.livesSaved++;
-          }
+      } else {
+        //console.log('tile.code:' + tile.getCode(), 'status.code:' + status.code);
+        status.healthGiven += Math.min(HERO_HEAL_AMOUNT + tile.health, 100) - tile.health; // Ensure we are accurate about how much healing is done
+        action = 'Heal ' + (Math.min(HERO_HEAL_AMOUNT + tile.health, 100) - tile.health);
+        adjacentEnemies = getAdjacentEnemies(helpers, board, tile.distanceFromTop, tile.distanceFromLeft, status.team);
+        // Count lives saved as those that are in immediate danger of being attacked and wouldn't survive it
+        // TODO: Improve this estimate by looking at enemies that could move and then still do damage
+        if (tile.health <= adjacentEnemies * (HERO_FOCUSED_ATTACK_DAMAGE + HERO_ATTACK_DAMAGE)) {
+          status.livesSaved++;
+          action += 'Save'
         }
       }
+    } else if (tile.type === 'Hero' && tile.getCode() === status.code) {
+      action = 'Return';
     }
   }
 
   // Calculate damage and kills to adjacent enemies
   adjacentEnemies = getAdjacentEnemies(helpers, board, status.distanceFromTop, status.distanceFromLeft, status.team);
+  // TODO: Right now we assume they don't move and also don't attack,
+  // Impreove this by guessing their course of action
+  status.health -= adjacentEnemies.length * HERO_ATTACK_DAMAGE;
   status.damageDone = HERO_ATTACK_DAMAGE * adjacentEnemies.length;
   for (i = 0; i < adjacentEnemies.length; ++i) {
+    action += 'd';
     if (adjacentEnemies.health <= HERO_ATTACK_DAMAGE) {
       status.killCount++;
+      action += 'k';
     }
   }
 
-  return Math.max(
-    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'North', depth)),
-    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'East', depth)),
-    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'South', depth)),
-    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'West', depth)),
-    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'Stay', depth))
+  var baselineScore = startingStatus.score() / d;
+  //console.log('startingStatusScore:' + startingStatus.score(), 'baseline:' + baselineScore, 'statusScore:' + status.score());
+  var scoreForThisStep = status.score() / d - baselineScore;
+  //console.log(depth+1, Array(depth+1).join(' ') + direction, scoreForThisStep, action);
+  var nextSteps = {
+    North: evaluateMoveToPosition(helpers, board, status, 'North', d),
+    East: evaluateMoveToPosition(helpers, board, status, 'East', d),
+    South: evaluateMoveToPosition(helpers, board, status, 'South', d),
+    West: evaluateMoveToPosition(helpers, board, status, 'West', d),
+    Stay: evaluateMoveToPosition(helpers, board, status, 'Stay', d)
+  };
+  var bestNextStepScore = Math.max(
+    nextSteps['North'],
+    nextSteps['East'],
+    nextSteps['South'],
+    nextSteps['West'],
+    nextSteps['Stay']
   );
+  return scoreForThisStep + bestNextStepScore;
 }
 
 function chooseBestMove(gameData, helpers) {
@@ -172,9 +207,12 @@ function chooseBestMove(gameData, helpers) {
   var curScore;
 
   while (i < DIRECTIONS.length) {
-    if (helpers.getTileNearby(gameData.board, status.distanceFromTop, status.distanceFromLeft, DIRECTIONS[i])) {
+    if (DIRECTIONS[i] === 'Stay' || helpers.getTileNearby(gameData.board, status.distanceFromTop, status.distanceFromLeft, DIRECTIONS[i])) {
 
-      curScore = evaluateMoveToPosition(helpers, gameData.board, status, DIRECTIONS[i], MAX_DEPTH);
+      //console.log('Evaluating Starting', DIRECTIONS[i]);
+      curScore = evaluateMoveToPosition(helpers, gameData.board, status, DIRECTIONS[i], 0);
+      //console.log('Total:',DIRECTIONS[i],curScore);
+      //console.log('');
       if (curScore > bestScore) {
         bestScore = curScore;
         bestDirections = [DIRECTIONS[i]];
@@ -186,6 +224,7 @@ function chooseBestMove(gameData, helpers) {
   }
 
   // Choose randomly from all the best possible choices
+  //console.log('Choosing from:', bestDirections, bestScore);
   return bestDirections[~~(bestDirections.length * Math.random())];
 }
 
