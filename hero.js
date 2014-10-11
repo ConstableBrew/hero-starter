@@ -29,7 +29,8 @@ var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
 var MAX_DEPTH = 4;
 
 
-function Status(status){
+function Status(status) {
+  'use strict';
   // Simplification of hero's status
   // status parameter may be a Hero object or a Status object
   this.team = status.team;
@@ -37,7 +38,7 @@ function Status(status){
   this.distanceFromLeft = status.distanceFromLeft;
   this.health = status.health;
   this.healthGiven = status.healthGiven;
-  this.livesSaved = status.livesSaved || 0
+  this.livesSaved = status.livesSaved || 0;
   this.minesCaptured = status.minesCaptured;
   this.minesOwned = status.minesOwned || {};
   this.damageDone = status.damageDone;
@@ -45,32 +46,45 @@ function Status(status){
   this.gravesRobbed = status.gravesRobbed; // Why do we care?
 }
 
-
-module.exports = function(gameData, helpers) {
-  return chooseBestMove(gameData, helpers);
-};
-
-function chooseBestMove(gameData, helpers) {
-  var i=0;
-  var status = new Status(gameData.activeHero);
-  var bestScore = -Infinity;
-  var bestDirections = []
-
-  for(; i<DIRECTIONS.length; ++i) {
-    curScore = evaluateMoveToPosition(helpers, gameData.board, status, DIRECTIONS[i], MAX_DEPTH);
-    if (curScore > bestScore) {
-      bestScore = curScore;
-      bestDirections = [DIRECTIONS[i]];
-    } else if (curScore === bestScore) {
-      bestDirections.push(DIRECTIONS[i]);
-    }
+function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, team) {
+  'use strict';
+  var n = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'North');
+  var e = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'East');
+  var s = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'South');
+  var w = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'West');
+  var adjacent = [];
+  if (n.team && n.team !== team) {
+    adjacent.push(n);
   }
-
-  // Choose randomly from all the best possible choices
-  return bestDirections[bestDirections.length * Math.random()];
+  if (e.team && e.team !== team) {
+    adjacent.push(e);
+  }
+  if (s.team && s.team !== team) {
+    adjacent.push(s);
+  }
+  if (w.team && w.team !== team) {
+    adjacent.push(w);
+  }
+  return adjacent;
 }
 
-function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth){
+function calculateStatusScore(status) {
+  'use strict';
+  var totalScore = 0;
+  // Win > alive > killCount > healthGiven > damageDone > minesCaptured
+  if (status.health <= 0) {
+    return -Infinity;
+  }
+  totalScore += status.killCount * 100;
+  totalScore += status.livesSaved * 100;
+  totalScore += Math.log(status.healthGiven * 1.5) / SCORE_NORMALIZE;
+  totalScore += Math.log(status.damageDone) / SCORE_NORMALIZE;
+  totalScore += status.minesCaptured * 50;
+  return totalScore;
+}
+
+function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth) {
+  'use strict';
   // Gets the tile at the location that the hero wants to go to
   var status = new Status(startingStatus);
   var tile = helpers.getTileNearby(board, status.distanceFromTop, status.distanceFromLeft, direction);
@@ -91,13 +105,13 @@ function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth
         status.distanceFromTop = tile.distanceFromTop;
         status.distanceFromLeft = tile.distanceFromLeft;
 
-      }else if (tile.subType === 'Bones') {
+      } else if (tile.subType === 'Bones') {
         status.gravesRobbed++;
         status.distanceFromTop = tile.distanceFromTop;
         status.distanceFromLeft = tile.distanceFromLeft;
 
-      }else if (tile.type === 'DiamondMine') {
-        if (!status.minesOwned.hasOwnProperty(tile.id)){
+      } else if (tile.type === 'DiamondMine') {
+        if (!status.minesOwned.hasOwnProperty(tile.id)) {
           status.health -= DIAMOND_MINE_CAPTURE_DAMAGE;
           status.minesCaptured++;
           status.minesOwned[tile.id] = true;
@@ -130,43 +144,45 @@ function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth
   // Calculate damage and kills to adjacent enemies
   adjacentEnemies = getAdjacentEnemies(helpers, board, status.distanceFromTop, status.distanceFromLeft, status.team);
   status.damageDone = HERO_ATTACK_DAMAGE * adjacentEnemies.length;
-  for (i=0; i<adjacentEnemies.length; ++i){
+  for (i = 0; i < adjacentEnemies.length; ++i) {
     if (adjacentEnemies.health <= HERO_ATTACK_DAMAGE) {
       status.killCount++;
     }
   }
 
   return Math.max(
-      calculateStatusScoreevaluateMoveToPosition(helpers, board, status, 'North', depth)),
-      calculateStatusScoreevaluateMoveToPosition(helpers, board, status, 'East', depth)),
-      calculateStatusScoreevaluateMoveToPosition(helpers, board, status, 'South', depth)),
-      calculateStatusScoreevaluateMoveToPosition(helpers, board, status, 'West', depth)),
-      calculateStatusScoreevaluateMoveToPosition(helpers, board, status, 'Stay', depth))
-    );
+    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'North', depth)),
+    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'East', depth)),
+    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'South', depth)),
+    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'West', depth)),
+    calculateStatusScore(evaluateMoveToPosition(helpers, board, status, 'Stay', depth))
+  );
 }
 
-function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, team) {
-  var n = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'North');
-  var e = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'East');
-  var s = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'South');
-  var w = helpers.getTileNearby(board, distanceFromTop, distanceFromLeft, 'West');
-  var adjacent = [];
-  if (n.team && n.team !== team) adjacent.push n;
-  if (e.team && e.team !== team) adjacent.push e;
-  if (s.team && s.team !== team) adjacest.push s;
-  if (w.team && w.team !== team) adjacewt.push w;
-  return adjacent;
-}
+function chooseBestMove(gameData, helpers) {
+  'use strict';
+  var i = 0;
+  var status = new Status(gameData.activeHero);
+  var bestScore = -Infinity;
+  var bestDirections = [];
+  var curScore;
 
-function calculateStatusScore(status) {
-  var totalScore = 0;
-  // Win > alive > killCount > healthGiven > damageDone > minesCaptured
-  if (status.health <= 0) {
-    return -Infinity;
+  while (i < DIRECTIONS.length) {
+    curScore = evaluateMoveToPosition(helpers, gameData.board, status, DIRECTIONS[i], MAX_DEPTH);
+    if (curScore > bestScore) {
+      bestScore = curScore;
+      bestDirections = [DIRECTIONS[i]];
+    } else if (curScore === bestScore) {
+      bestDirections.push(DIRECTIONS[i]);
+    }
+    ++i;
   }
-  totalScore += status.killCount * 100;
-  totalScore += status.livesSaved * 100;
-  totalScore += Math.log(status.healthGiven * 1.5) / SCORE_NORMALIZE;
-  totalScore += Math.log(status.damageDone * 1.0) / SCORE_NORMALIZE;
-  totalScore += status.minesCaptured * 50;
+
+  // Choose randomly from all the best possible choices
+  return bestDirections[bestDirections.length * Math.random()];
 }
+
+module.exports = function (gameData, helpers) {
+  'use strict';
+  return chooseBestMove(gameData, helpers);
+};
