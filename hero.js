@@ -198,7 +198,7 @@ function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth
   return scoreForThisStep + bestNextStepScore;
 }
 
-function chooseBestMove(gameData, helpers) {
+function move(gameData, helpers) {
   'use strict';
   var i = 0;
   var status = new Status(gameData.activeHero);
@@ -228,7 +228,4 @@ function chooseBestMove(gameData, helpers) {
   return bestDirections[~~(bestDirections.length * Math.random())];
 }
 
-module.exports = function (gameData, helpers) {
-  'use strict';
-  return chooseBestMove(gameData, helpers);
-};
+module.exports = move;
