@@ -26,7 +26,7 @@ var HERO_HEAL_AMOUNT = 40;
 
 var SCORE_NORMALIZE = Math.log(HERO_ATTACK_DAMAGE);
 var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
-var MAX_DEPTH = 4;
+var MAX_DEPTH = 1;
 
 
 function Status(status) {
@@ -42,7 +42,7 @@ function Status(status) {
   this.minesCaptured = status.minesCaptured;
   this.minesOwned = status.minesOwned || {};
   this.damageDone = status.damageDone;
-  this.killCount = status.killCount || status.heroesKilled.length;
+  this.killCount = status.killCount || (status.heroesKilled?status.heroesKilled.length:0);
   this.gravesRobbed = status.gravesRobbed; // Why do we care?
 }
 
@@ -77,8 +77,8 @@ function calculateStatusScore(status) {
   }
   totalScore += status.killCount * 100;
   totalScore += status.livesSaved * 100;
-  totalScore += Math.log(status.healthGiven * 1.5) / SCORE_NORMALIZE;
-  totalScore += Math.log(status.damageDone) / SCORE_NORMALIZE;
+  totalScore += Math.log(status.healthGiven * 1.5 + 1) / SCORE_NORMALIZE;
+  totalScore += Math.log(status.damageDone + 1) / SCORE_NORMALIZE;
   totalScore += status.minesCaptured * 50;
   return totalScore;
 }
@@ -90,17 +90,20 @@ function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth
   var tile = helpers.getTileNearby(board, status.distanceFromTop, status.distanceFromLeft, direction);
   var adjacentEnemies, i;
 
-  if (--depth <= 0 || startingStatus.health <= 0) {
-    return startingStatus;
+  if (--depth < 0 || startingStatus.health <= 0) {
+    return calculateStatusScore(startingStatus);
   }
 
+  console.log('Testing:', direction);
   if (direction !== 'Stay') {
     // If tile is not on the board (invalid coordinates), don't move
     if (tile === false) {
       tile = board.tiles[status.distanceFromTop][status.distanceFromLeft];
+      console.log('  invalid position, must stay');
 
     // Determine results of the move
     } else {
+      console.log('  ' + tile.type);
       if (tile.type === 'Unoccupied') {
         status.distanceFromTop = tile.distanceFromTop;
         status.distanceFromLeft = tile.distanceFromLeft;
@@ -111,6 +114,7 @@ function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth
         status.distanceFromLeft = tile.distanceFromLeft;
 
       } else if (tile.type === 'DiamondMine') {
+        console.log('DiamondMine test:', JSON.stringify(status.minesOwned), !status.minesOwned.hasOwnProperty(tile.id));
         if (!status.minesOwned.hasOwnProperty(tile.id)) {
           status.health -= DIAMOND_MINE_CAPTURE_DAMAGE;
           status.minesCaptured++;
@@ -168,18 +172,21 @@ function chooseBestMove(gameData, helpers) {
   var curScore;
 
   while (i < DIRECTIONS.length) {
-    curScore = evaluateMoveToPosition(helpers, gameData.board, status, DIRECTIONS[i], MAX_DEPTH);
-    if (curScore > bestScore) {
-      bestScore = curScore;
-      bestDirections = [DIRECTIONS[i]];
-    } else if (curScore === bestScore) {
-      bestDirections.push(DIRECTIONS[i]);
+    if (helpers.getTileNearby(gameData.board, status.distanceFromTop, status.distanceFromLeft, DIRECTIONS[i])) {
+
+      curScore = evaluateMoveToPosition(helpers, gameData.board, status, DIRECTIONS[i], MAX_DEPTH);
+      if (curScore > bestScore) {
+        bestScore = curScore;
+        bestDirections = [DIRECTIONS[i]];
+      } else if (curScore === bestScore) {
+        bestDirections.push(DIRECTIONS[i]);
+      }
     }
     ++i;
   }
 
   // Choose randomly from all the best possible choices
-  return bestDirections[bestDirections.length * Math.random()];
+  return bestDirections[~~(bestDirections.length * Math.random())];
 }
 
 module.exports = function (gameData, helpers) {
