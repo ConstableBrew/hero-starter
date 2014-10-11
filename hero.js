@@ -60,7 +60,7 @@ function calculateStatusScore(status) {
   if (status.health <= 0) {
     return -Infinity;
   }
-  totalScore += status.health;              // Being healthy is good
+  totalScore += (status.health > 50?100:0); // Being mostly healthy is good
   totalScore += status.killCount * 100;     // 100 per kill
   totalScore += status.livesSaved * 100;    // 100 per life saved
   totalScore += status.minesCaptured * 50;  // 50 per mine
