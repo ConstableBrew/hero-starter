@@ -1,4 +1,8 @@
+// The Tactician
+// Thinks deep into the future, weighing all options carefully before choosing a course of action.
+
 /*
+ Brainstorming:
   if I move here,
     what will my health be?
     How much damage will I deal?
@@ -9,9 +13,8 @@
   Who can I trust
     to heal me?
     to not steal my diamonds?
+    to attack the enemy?
   Who can I not trust?
-    stole my diamonds?
-    did not heal me?
   Do my friends need help right now? Soon?
 
   Is my team winning?
@@ -25,9 +28,10 @@ var HEALTH_WELL_HEAL_AMOUNT = 30;
 var HERO_HEAL_AMOUNT = 40;
 
 var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
-var MAX_DEPTH = 6;
+var MAX_DEPTH = 5;
 
 
+// Holds the current state of the hero at any given point, with all relevant accumulated actions
 function Status(status) {
   'use strict';
   // Simplification of hero's status
@@ -53,6 +57,8 @@ function Status(status) {
   }
 }
 
+// Gives a score (higher==better) for a given Status object.
+// Different strategies could be defined by changing the weights
 function calculateStatusScore(status) {
   'use strict';
   var totalScore = 0;
@@ -92,6 +98,15 @@ function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, t
   return adjacent;
 }
 
+// Finds the score of a given move by determining what will happen
+// when the hero attempts to move in the given direction. The score is recorded
+// and then added to the best of all possible scores should the hero attempt another
+// move from that new location/state by calling this function recursively.
+// Scores are kept relevent by dividing the score by the depth, since things that
+// would require several steps to complete are less probably going to actually happen.
+// TODO: Improve the future prediction by updating the other heros on the board,
+// making a best-guess for what each of them will do. (Maybe use this function, with
+// a max depth of just 1.)
 function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth) {
   'use strict';
   // Gets the tile at the location that the hero wants to go to
@@ -153,7 +168,10 @@ function evaluateMoveToPosition(helpers, board, startingStatus, direction, depth
         action = 'Heal ' + (Math.min(HERO_HEAL_AMOUNT + tile.health, 100) - tile.health);
         adjacentEnemies = getAdjacentEnemies(helpers, board, tile.distanceFromTop, tile.distanceFromLeft, status.team);
         // Count lives saved as those that are in immediate danger of being attacked and wouldn't survive it
-        // TODO: Improve this estimate by looking at enemies that could move and then still do damage
+        // TODO: Improve this estimate by looking at enemies that could move and then still do damage to the friend. Ex:
+        // Friend is at 70 health and has one neighboring enemy, so healing him now would seem to be less efficient than waiting
+        // for him to take more damage. But then two more enemies move in and the adjacent enemy makes a focused attack,
+        // killing our friend.
         if (tile.health <= adjacentEnemies * (HERO_FOCUSED_ATTACK_DAMAGE + HERO_ATTACK_DAMAGE)) {
           status.livesSaved++;
           action += 'Save'
