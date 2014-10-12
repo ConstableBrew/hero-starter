@@ -27,9 +27,13 @@ var heroMoveFunction = require('./hero.js');
 
 //The move function ("brain") the practice enemy will use
 var enemyMoveFunction = function(gameData, helpers) {
-  //Move in a random direction
-  var choices = ['North', 'South', 'East', 'West'];
-  return choices[Math.floor(Math.random()*4)];
+  // The "Unwise Assassin"
+  var myHero = gameData.activeHero;
+  if (myHero.health < 30) {
+    return helpers.findNearestHealthWell(gameData);
+  } else {
+    return helpers.findNearestEnemy(gameData);
+  }
 }
 
 //Makes a new game with a 5x5 board
@@ -56,7 +60,7 @@ console.log('About to start the game!  Here is what the board looks like:');
 game.board.inspect();
 
 //Play a very short practice game
-var turnsToPlay = 30;
+var turnsToPlay = 100;
 
 for (var i=0; i<turnsToPlay; i++) {
   var hero = game.activeHero;

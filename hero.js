@@ -66,6 +66,7 @@ function calculateStatusScore(status) {
   totalScore += status.minesCaptured * 50;  // 50 per mine
   totalScore += status.healthGiven;         // 10~40 per heal
   totalScore += status.damageDone;          // 10~30 per attack
+  totalScore += status.gravesRobbed * 5;    // Minor goal of getting boned
   return totalScore;
 }
 
