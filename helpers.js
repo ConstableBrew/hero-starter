@@ -75,11 +75,12 @@ helpers.findNearestObjectDirectionAndDistance = function(board, fromTile, tileCa
       // ...Use the getTileNearby helper method to do this
       var nextTile = helpers.getTileNearby(board, dft, dfl, direction);
 
-      // If nextTile is a valid location to move...
-      if (nextTile) {
+      // Assign a key variable the nextTile's coordinates to put into our visited object later
+      var key = nextTile?(nextTile.distanceFromTop + '|' + nextTile.distanceFromLeft):'';
 
-        // Assign a key variable the nextTile's coordinates to put into our visited object later
-        var key = nextTile.distanceFromTop + '|' + nextTile.distanceFromLeft;
+      // If nextTile is a valid location to move...
+      if (nextTile && !visited.hasOwnProperty(key)) {
+
 
         var isGoalTile = false;
         try {
@@ -94,44 +95,45 @@ helpers.findNearestObjectDirectionAndDistance = function(board, fromTile, tileCa
           //Do nothing--this tile has already been visited
 
         //Is this tile the one we want?
-        } else if (isGoalTile) {
+        } else {
+          if (isGoalTile) {
 
-          // This variable will eventually hold the first direction we went on this path
-          var correctDirection = direction;
+            // This variable will eventually hold the first direction we went on this path
+            var correctDirection = direction;
 
-          // This is the distance away from the final destination that will be incremented in a bit
-          var distance = 1;
+            // This is the distance away from the final destination that will be incremented in a bit
+            var distance = 1;
 
-          // These are the coordinates of our target tileType
-          var finalCoords = [nextTile.distanceFromTop, nextTile.distanceFromLeft];
+            // These are the coordinates of our target tileType
+            var finalCoords = [nextTile.distanceFromTop, nextTile.distanceFromLeft];
 
-          // Loop back through path until we get to the start
-          while (coords[3] !== 'START') {
+            // Loop back through path until we get to the start
+            while (coords[3] !== 'START') {
 
-            // Haven't found the start yet, so go to previous location
-            correctDirection = coords[2];
+              // Haven't found the start yet, so go to previous location
+              correctDirection = coords[2];
 
-            // We also need to increment the distance
-            distance++;
+              // We also need to increment the distance
+              distance++;
 
-            // And update the coords of our current path
-            coords = coords[3];
-          }
+              // And update the coords of our current path
+              coords = coords[3];
+            }
 
-          //Return object with the following pertinent info
-          return {
-            direction: correctDirection,
-            distance: distance,
-            coords: finalCoords
-          };
+            //Return object with the following pertinent info
+            return {
+              direction: correctDirection,
+              distance: distance,
+              coords: finalCoords
+            };
 
           // If the tile is unoccupied, then we need to push it into our queue
-        } else if (nextTile.type === 'Unoccupied') {
+          } else if (nextTile.type === 'Unoccupied') {
 
-          queue.push([nextTile.distanceFromTop, nextTile.distanceFromLeft, direction, coords]);
-
-          // Give the visited object another key with the value we stored earlier
-          visited[key] = true;
+            queue.push([nextTile.distanceFromTop, nextTile.distanceFromLeft, direction, coords]);
+            // Give the visited object another key with the value we stored earlier
+            visited[key] = true;
+          }
         }
       }
     }
