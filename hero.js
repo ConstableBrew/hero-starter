@@ -9,6 +9,7 @@ var HERO_HEAL_AMOUNT = 40;
 
 var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
 var MAX_DEPTH = 4;
+var MAX_ENEMY_DEPTH = 2;
 
 var GOAL_PROGRESSION_SCORE = 24; // Score for steps in the direction of our established strategic goal
 
@@ -161,14 +162,19 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 	if (scoreForThisStep >= 0) {
 		var strategicGoalDirection = directionToOverallStrategy(helpers, board, status);
 		var strategicGoalScoreForThisStep = GOAL_PROGRESSION_SCORE / d;
-		var updatedGameData = deepCopy(gameData);
-		if (startingStatus.distanceFromLeft !== status.distanceFromLeft || startingStatus.distanceFromTop !== status.distanceFromTop) {
-			swapTiles(updatedGameData.board, 
-				updatedGameData.board.tiles[status.distanceFromTop][status.distanceFromLeft],
-				updatedGameData.board.tiles[startingStatus.distanceFromTop][startingStatus.distanceFromLeft]
-			);
+		var updatedGameData = gameData;
+
+		// Estimatie enemy actions. This is expensive and inaccurate, so we only do it for the first couple steps 
+		if (d <= MAX_ENEMY_DEPTH) {
+			var updatedGameData = deepCopy(gameData);
+			if (startingStatus.distanceFromLeft !== status.distanceFromLeft || startingStatus.distanceFromTop !== status.distanceFromTop) {
+				swapTiles(updatedGameData.board, 
+					updatedGameData.board.tiles[status.distanceFromTop][status.distanceFromLeft],
+					updatedGameData.board.tiles[startingStatus.distanceFromTop][startingStatus.distanceFromLeft]
+				);
+			}
+			updateAllOtherHeros(updatedGameData, status.code, helpers);
 		}
-		updateAllOtherHeros(updatedGameData, status.code, helpers);
 
 		var nextSteps = {
 			North: evaluateMoveToPosition(helpers, updatedGameData, status, 'North', d),
