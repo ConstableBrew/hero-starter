@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // The Tactician
 // Thinks deep into the future, weighing all options carefully before choosing a course of action.
 

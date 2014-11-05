@@ -62,8 +62,8 @@ helpers.findNearestObjectDirectionAndDistance = function(board, fromTile, tileCa
     var coords = queue.shift();
 
     // Reset the coordinates to the shifted object's coordinates
-    var dft = coords[0];
-    var dfl = coords[1];
+    dft = coords[0];
+    dfl = coords[1];
 
     // Loop through cardinal directions
     var directions = ['North', 'East', 'South', 'West'];
@@ -120,12 +120,12 @@ helpers.findNearestObjectDirectionAndDistance = function(board, fromTile, tileCa
               coords = coords[3];
             }
 
-            //Return object with the following pertinent info
-            return {
-              direction: correctDirection,
-              distance: distance,
-              coords: finalCoords
-            };
+          //Return object with the following pertinent info
+          var goalTile = nextTile;
+          goalTile.direction = correctDirection;
+          goalTile.distance = distance;
+          goalTile.coords = finalCoords;
+          return goalTile;
 
           // If the tile is unoccupied, then we need to push it into our queue
           } else if (nextTile.type === 'Unoccupied') {
@@ -226,7 +226,7 @@ helpers.findNearestEnemy = function(gameData) {
 
   //Get the path info object
   var pathInfoObject = helpers.findNearestObjectDirectionAndDistance(board, hero, function(enemyTile) {
-    return enemyTile.type === 'Hero' && enemyTile.team !== hero.team
+    return enemyTile.type === 'Hero' && enemyTile.team !== hero.team;
   });
 
   //Return the direction that needs to be taken to achieve the goal
