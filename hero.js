@@ -11,7 +11,7 @@ var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
 var MAX_DEPTH = 4;
 var MAX_ENEMY_DEPTH = 2;
 
-var GOAL_PROGRESSION_SCORE = 24; // Score for steps in the direction of our established strategic goal
+var GOAL_PROGRESSION_SCORE = 25; // Score for steps in the direction of our established strategic goal
 
 var Safe_Health_Threshold = 50;
 var Base_Health_Threshold = 30;
@@ -25,16 +25,16 @@ function calculateStatusScore(status) {
 	if (status.health <= 0) {
 		return -Infinity;
 	}
-	totalScore += (status.health > Safe_Health_Threshold ? 30 : 0); // 80 if over the safe level
+	totalScore += (status.health > Safe_Health_Threshold ? 15 : 0); // 65 if over the safe level
 	totalScore += (status.health > Base_Health_Threshold ? 50 : 0); // 50 if over the base level
 																	// 0 if under or at the base level
-	totalScore += status.killCount * 100;					// 100 per kill
-	totalScore += status.livesSaved * 100;					// 100 per life saved
+	totalScore += status.killCount * 200;					// 200 per kill
+	totalScore += status.livesSaved * 150;					// 150 per life saved
 	totalScore += status.minesCaptured * 50;  				// 50 per mine
 	totalScore += status.damageDone;						// 10~30 per attack
 	totalScore += Math.max(status.healthGiven-15,0); 		// 0~25 per heal
 	totalScore += status.gravesRobbed * 5;					// Minor goal of getting boned
-	// Don't forget that GOAL_PROGRESSION_SCORE is added to moves in evaluateMoveToPosition function
+	// Don't forget that GOAL_PROGRESSION_SCORE is added to moves in move function
 	return totalScore;
 }
 
@@ -72,6 +72,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 	var tile = (direction !== 'Stay')?helpers.getTileNearby(board, status.distanceFromTop, status.distanceFromLeft, direction):board.tiles[status.distanceFromTop][status.distanceFromLeft];
 	var d = +depth + 1;
 	var action = '';
+	var heroMoved = false;
 	var adjacentEnemies, i;
 	
 
@@ -90,12 +91,14 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 			status.distanceFromTop = tile.distanceFromTop;
 			status.distanceFromLeft = tile.distanceFromLeft;
 			action = 'Walk';
+			heroMoved = true;
 
 		} else if (tile.subType === 'Bones') {
 			status.gravesRobbed++;
 			status.distanceFromTop = tile.distanceFromTop;
 			status.distanceFromLeft = tile.distanceFromLeft;
 			action = 'Walk';
+			heroMoved = true;
 
 		} else if (tile.type === 'DiamondMine') {
 			if (!status.minesOwned.hasOwnProperty(tile.id)) {
@@ -143,37 +146,44 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 
 	// Calculate damage and kills to adjacent enemies
 	adjacentEnemies = getAdjacentEnemies(helpers, board, status.distanceFromTop, status.distanceFromLeft, status.team);
-	// TODO: Right now we assume they don't move and always attack,
-	// Impreove this by guessing their course of action
 	status.health -= adjacentEnemies.length * (HERO_ATTACK_DAMAGE + HERO_FOCUSED_ATTACK_DAMAGE);
-	status.damageDone = (HERO_ATTACK_DAMAGE + HERO_FOCUSED_ATTACK_DAMAGE) * adjacentEnemies.length;
+	status.damageDone += HERO_ATTACK_DAMAGE * adjacentEnemies.length;
 	for (i = 0; i < adjacentEnemies.length; ++i) {
 		action += 'd';
-		if (adjacentEnemies.health <= HERO_ATTACK_DAMAGE) {
+		if (adjacentEnemies[i].health <= HERO_ATTACK_DAMAGE) {
 			status.killCount++;
 			action += 'k';
 		}
 	}
 
-	var scoreForThisStep = status.score(startingStatus) / d;
+	var scoreForThisStep = Math.floor(status.score(startingStatus) / d * 10) / 10;
 	var bestNextStepScore = 0;
-	
+
 	// explore further options if this path is still viable.
 	if (scoreForThisStep >= 0) {
-		var strategicGoalDirection = directionToOverallStrategy(helpers, board, status);
-		var strategicGoalScoreForThisStep = GOAL_PROGRESSION_SCORE / d;
 		var updatedGameData = gameData;
 
-		// Estimatie enemy actions. This is expensive and inaccurate, so we only do it for the first couple steps 
+		// Estimatie enemy actions. This is expensive and inaccurate, so we only do it for some steps 
 		if (d <= MAX_ENEMY_DEPTH) {
+		//console.log(d, (new Array(d+1)).join('    ') + '*** Estimating Enemy Movements ***')
 			var updatedGameData = deepCopy(gameData);
-			if (startingStatus.distanceFromLeft !== status.distanceFromLeft || startingStatus.distanceFromTop !== status.distanceFromTop) {
+			
+		//console.log('Before:');
+		//gameData.board.inspect();
+		//console.log(d, (new Array(d+1)).join('    ') + status.getCode() + ' Moved ' + direction + ')');
+
+			if (heroMoved) {
+				
 				swapTiles(updatedGameData.board, 
 					updatedGameData.board.tiles[status.distanceFromTop][status.distanceFromLeft],
 					updatedGameData.board.tiles[startingStatus.distanceFromTop][startingStatus.distanceFromLeft]
 				);
 			}
-			updateAllOtherHeros(updatedGameData, status.code, helpers);
+			updateAllOtherHeros(updatedGameData, status.getCode(), helpers);
+			
+		//console.log('After:');
+		//updatedGameData.board.inspect();
+		//console.log(d, (new Array(d+1)).join('    ') + '*** Done Estimating ***')
 		}
 
 		var nextSteps = {
@@ -183,7 +193,13 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 			West: evaluateMoveToPosition(helpers, updatedGameData, status, 'West', d),
 			Stay: evaluateMoveToPosition(helpers, updatedGameData, status, 'Stay', d)
 		};
-		nextSteps[strategicGoalDirection] += strategicGoalScoreForThisStep;
+
+	//console.log(d, (new Array(d+1)).join('    ') + 'scoreForThisStep:', scoreForThisStep);
+	//console.log(d, (new Array(d+1)).join('    ') + 'nextSteps.North:', nextSteps.North);
+	//console.log(d, (new Array(d+1)).join('    ') + 'nextSteps.East:', nextSteps.East);
+	//console.log(d, (new Array(d+1)).join('    ') + 'nextSteps.South:', nextSteps.South);
+	//console.log(d, (new Array(d+1)).join('    ') + 'nextSteps.West:', nextSteps.West);
+	//console.log(d, (new Array(d+1)).join('    ') + 'nextSteps.Stay:', nextSteps.Stay);
 		bestNextStepScore = Math.max(
 			nextSteps.North,
 			nextSteps.East,
@@ -192,6 +208,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 			nextSteps.Stay
 		);
 	} else {
+		//console.log(JSON.stringify(status));
 		bestNextStepScore = 0;
 	}
 	return scoreForThisStep + bestNextStepScore;
@@ -207,14 +224,14 @@ function move(gameData, helpers) {
 	var bestScore = -Infinity;
 	var bestDirections = [];
 	var strategicGoalDirection = directionToOverallStrategy(helpers, gameData.board, status);
-	var strategicGoalScoreForThisStep = GOAL_PROGRESSION_SCORE;
-	var curScore;
+	var curScore, direction;
 	var dt = Date.now();
 
 	while (i < DIRECTIONS.length) {
 		if (DIRECTIONS[i] === 'Stay' || helpers.getTileNearby(gameData.board, status.distanceFromTop, status.distanceFromLeft, DIRECTIONS[i])) {
 			curScore = evaluateMoveToPosition(helpers, gameData, status, DIRECTIONS[i], 0);
-			curScore += (DIRECTIONS[i] === strategicGoalDirection ? strategicGoalScoreForThisStep : 0);
+			curScore += (DIRECTIONS[i] === strategicGoalDirection ? GOAL_PROGRESSION_SCORE : 0);
+			console.log('Score for ' + DIRECTIONS[i] + ':', curScore);
 			if (curScore > bestScore) {
 				bestScore = curScore;
 				bestDirections = [DIRECTIONS[i]];
@@ -226,9 +243,10 @@ function move(gameData, helpers) {
 	}
 
 	// Choose randomly from all the best possible choices
-	//console.log('Best directions(' + bestScore + '): ' + bestDirections);
+	direction = bestDirections[~~(bestDirections.length * Math.random())];
+	console.log('Best directions(' + bestScore.toString().substr(0,3) + '): ' + bestDirections, '+' + strategicGoalDirection, '>>>' + direction);
 	console.log('Evaluation took ' + (Date.now() - dt) + 'ms');
-	return bestDirections[~~(bestDirections.length * Math.random())];
+	return direction;
 }
 
 
@@ -242,6 +260,7 @@ function Status(status) {
 	// status parameter may be a Hero object or a Status object
 	var self = {};
 	self.code = status.code || ((status.getCode !== 'undefined')?status.getCode():'xx');
+	self.getCode = function(){ return self.code; };
 	self.team = status.team;
 	self.distanceFromTop = status.distanceFromTop;
 	self.distanceFromLeft = status.distanceFromLeft;
@@ -255,19 +274,19 @@ function Status(status) {
 	self.gravesRobbed = status.gravesRobbed; // Why do we care?
 	self._score = null;
 	self.score = function (baseStatus) {
-		if (this._score === null) {
+		if (self._score === null) {
 			// We want only the score of the delta
 			if (baseStatus) {
-				self.healthGiven -= baseStatus.healthGiven;
-				self.livesSaved -= baseStatus.livesSaved;
-				self.minesCaptured -= baseStatus.minesCaptured;
-				self.damageDone -= baseStatus.damageDone;
-				self.killCount -= baseStatus.killCount;
-				self.gravesRobbed -= baseStatus.gravesRobbed;
+				self.healthGiven = Math.max(self.healthGiven - baseStatus.healthGiven, 0);
+				self.livesSaved = Math.max(self.livesSaved - baseStatus.livesSaved, 0);
+				self.minesCaptured = Math.max(self.minesCaptured - baseStatus.minesCaptured, 0);
+				self.damageDone = Math.max(self.damageDone - baseStatus.damageDone, 0);
+				self.killCount = Math.max(self.killCount - baseStatus.killCount, 0);
+				self.gravesRobbed = Math.max(self.gravesRobbed - baseStatus.gravesRobbed, 0);
 			}
-			this._score = calculateStatusScore(this);
+			self._score = calculateStatusScore(self);
 		}
-		return this._score;
+		return self._score;
 	};
 	return self;
 }
@@ -297,48 +316,56 @@ function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, t
 
 function updateAllOtherHeros(gameData, activeHeroCode, helpers) {
 	var hero, direction;
-	for (hero in gameData.heros) {
-		if (hero.code !== activeHeroCode && hero.health > 0) {
+	gameData.heroes.forEach(function(hero) {
+		if (hero.getCode() !== activeHeroCode && hero.health > 0) {
 			direction = getProbableHeroMove(hero, gameData, helpers);
+		//console.log('Estimated ' + hero.getCode() + ' moved ' + direction);
 			handleHeroMove(gameData.board, hero, direction);
+		} else {
+		//console.log('Skipping', hero.getCode());
 		}
-	}
+	});
 }
 
 
 // Estimate the likely move of a hero
 function getProbableHeroMove(hero, gameData, helpers) {
 	'use strict';
-	var moves = {};
+	var moves = {North: 0, East: 0, South: 0, West: 0, Stay: 0};
 	var i = 0;
 	var bestScore = -Infinity;
 	var bestDirections = [];
+	var direction;
 
 	if (hero.health <= Base_Health_Threshold) {
 		// Assume that all heros will prioritize getting healed when very low on health
-		return helpers.findNearestHealthWell(gameData);
+		direction = helpers.findNearestHealthWell(gameData);
+	//console.log('Predicting HealthWell >>>' + direction);
+		return direction;
 	}
 
 	if (hero.health < Safe_Health_Threshold) {
 		moves[helpers.findNearestHealthWell(gameData)] = 1;
 	}
-	moves[helpers.findNearestTeamMember(gameData)] += 1; 	// Priests
-	moves[helpers.findNearestEnemy(gameData)] += 1; 		// Unwise Assassins
-	moves[helpers.findNearestWeakerEnemy(gameData)] += 1; 	// Careful Assassins
-	moves[helpers.findNearestNonTeamDiamondMine(gameData)] += 1; // Miners
-	
-	while (i < moves.length) {
-		if (moves[i] > bestScore) {
-			bestScore = moves[i];
-			bestDirections = [i];
-		} else if (moves[i] === bestScore) {
-			bestDirections.push(i);
+	moves[helpers.findNearestTeamMember(gameData) || 'Stay'] += 1; 			// Priests
+	moves[helpers.findNearestEnemy(gameData) || 'Stay'] += 1; 				// Unwise Assassins
+	moves[helpers.findNearestWeakerEnemy(gameData) || 'Stay'] += 1; 		// Careful Assassins
+	moves[helpers.findNearestNonTeamDiamondMine(gameData) || 'Stay'] += 1; 	// Miners
+//console.log('predicted move weights: ' + JSON.stringify(moves));
+	while (i < DIRECTIONS.length) {
+		if (moves[DIRECTIONS[i]] > bestScore) {
+			bestScore = moves[DIRECTIONS[i]];
+			bestDirections = [DIRECTIONS[i]];
+		} else if (moves[DIRECTIONS[i]] === bestScore) {
+			bestDirections.push(DIRECTIONS[i]);
 		}
 		++i;
 	}
 
 	// Choose randomly from all the best possible choices
-	return bestDirections[~~(bestDirections.length * Math.random())];
+	direction = bestDirections[~~(bestDirections.length * Math.random())];
+//console.log(hero.getCode() + ' Predicting(' + bestScore.toString().substr(0,3) + '): ' + bestDirections, '>>>' + direction);
+	return direction;
 
 }
 
@@ -374,9 +401,17 @@ function deepCopy(obj) {
 		return obj;
 	}
 	//make sure the returned object has the same prototype as the original
-	var ret = Object.create(obj.constructor.prototype);
-	for(var key in obj){
-		ret[key] = deepCopy(obj[key]);
+	var ret;
+	if (Array.isArray(obj)) {
+		ret = [];
+		obj.forEach(function (e,i) {
+			ret[i] = deepCopy(e);
+		});
+	} else {
+		ret = Object.create(obj.constructor.prototype);
+		for(var key in obj){
+			ret[key] = deepCopy(obj[key]);
+		}
 	}
 	return ret;
 }

@@ -26,16 +26,15 @@ var Game = require('./game_logic/Game.js');
 var heroMoveFunction = require('./hero.js');
 
 //The move function ("brain") the practice enemy will use
-var enemyMoveFunction = heroMoveFunction;
-/*function(gameData, helpers) {
-  // The "Unwise Assassin"
+var enemyMoveFunction = function(gameData, helpers) {
+  // Aggressive
   var myHero = gameData.activeHero;
-  if (myHero.health < 30) {
+  if (myHero.health <= 40) {
     return helpers.findNearestHealthWell(gameData);
   } else {
     return helpers.findNearestEnemy(gameData);
   }
-}*/
+}
 
 //Makes a new game with a 5x5 board
 var game = new Game(5);
@@ -63,7 +62,7 @@ game.board.inspect();
 //Play a very short practice game
 var turnsToPlay = 50;
 
-for (var i=0; i<turnsToPlay; i++) {
+for (var i=0; i<turnsToPlay && game.activeHero !== hero; i++) {
   var hero = game.activeHero;
   var direction;
   if (hero.name === 'MyHero') {
