@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 // The Tactician
 // Thinks deep into the future, weighing all options carefully before choosing a course of action.
 
@@ -9,9 +8,9 @@ var HEALTH_WELL_HEAL_AMOUNT = 30;
 var HERO_HEAL_AMOUNT = 40;
 
 var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
-var MAX_DEPTH = 5;
+var MAX_DEPTH = 4;
 
-var GOAL_PROGRESSION_SCORE = 5; // Steps in the direction of our established strategic goal get priority
+var GOAL_PROGRESSION_SCORE = 24; // Score for steps in the direction of our established strategic goal
 
 var Safe_Health_Threshold = 50;
 var Base_Health_Threshold = 30;
@@ -25,13 +24,15 @@ function calculateStatusScore(status) {
 	if (status.health <= 0) {
 		return -Infinity;
 	}
-	totalScore += status.health/1.25; 								// Being mostly healthy is good
-	totalScore += status.killCount * 100;     				// 100 per kill
-	totalScore += status.livesSaved * 100;    				// 100 per life saved
+	totalScore += (status.health > Safe_Health_Threshold ? 30 : 0); // 80 if over the safe level
+	totalScore += (status.health > Base_Health_Threshold ? 50 : 0); // 50 if over the base level
+																	// 0 if under or at the base level
+	totalScore += status.killCount * 100;					// 100 per kill
+	totalScore += status.livesSaved * 100;					// 100 per life saved
 	totalScore += status.minesCaptured * 50;  				// 50 per mine
-	totalScore += status.damageDone;          				// 10~30 per attack
-	totalScore += Math.max(status.healthGiven-15,0); 	// 0~25 per heal
-	totalScore += status.gravesRobbed * 5;    				// Minor goal of getting boned
+	totalScore += status.damageDone;						// 10~30 per attack
+	totalScore += Math.max(status.healthGiven-15,0); 		// 0~25 per heal
+	totalScore += status.gravesRobbed * 5;					// Minor goal of getting boned
 	// Don't forget that GOAL_PROGRESSION_SCORE is added to moves in evaluateMoveToPosition function
 	return totalScore;
 }
@@ -71,6 +72,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 	var d = +depth + 1;
 	var action = '';
 	var adjacentEnemies, i;
+	
 
 	// Quit recursion if we hit a hard stop
 	if (d === MAX_DEPTH || startingStatus.health <= 0 || tile === false) {
@@ -130,7 +132,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 				// killing our friend.
 				if (tile.health <= adjacentEnemies * (HERO_FOCUSED_ATTACK_DAMAGE + HERO_ATTACK_DAMAGE)) {
 					status.livesSaved++;
-					action += 'Save'
+					action += 'Save';
 				}
 			}
 		} else if (tile.type === 'Hero' && tile.getCode() === status.code) {
@@ -152,27 +154,40 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 		}
 	}
 
-	var baselineScore = startingStatus.score() / d;
+	var scoreForThisStep = status.score(startingStatus) / d;
+	var bestNextStepScore = 0;
+	
+	// explore further options if this path is still viable.
+	if (scoreForThisStep >= 0) {
+		var strategicGoalDirection = directionToOverallStrategy(helpers, board, status);
+		var strategicGoalScoreForThisStep = GOAL_PROGRESSION_SCORE / d;
+		var updatedGameData = deepCopy(gameData);
+		if (startingStatus.distanceFromLeft !== status.distanceFromLeft || startingStatus.distanceFromTop !== status.distanceFromTop) {
+			swapTiles(updatedGameData.board, 
+				updatedGameData.board.tiles[status.distanceFromTop][status.distanceFromLeft],
+				updatedGameData.board.tiles[startingStatus.distanceFromTop][startingStatus.distanceFromLeft]
+			);
+		}
+		updateAllOtherHeros(updatedGameData, status.code, helpers);
 
-	var scoreForThisStep = status.score() / d - baselineScore;
-
-	var strategicGoalDirection = directionToOverallStrategy(helpers, board, status);
-	var strategicGoalScoreForThisStep = GOAL_PROGRESSION_SCORE / d;
-	var nextSteps = {
-		North: evaluateMoveToPosition(helpers, gameData, status, 'North', d),
-		East: evaluateMoveToPosition(helpers, gameData, status, 'East', d),
-		South: evaluateMoveToPosition(helpers, gameData, status, 'South', d),
-		West: evaluateMoveToPosition(helpers, gameData, status, 'West', d),
-		Stay: evaluateMoveToPosition(helpers, gameData, status, 'Stay', d)
-	};
-	var bestNextStepScore = Math.max(
-		nextSteps['North'] + ('North' === strategicGoalDirection ? strategicGoalScoreForThisStep : 0),
-		nextSteps['East'] + ('East' === strategicGoalDirection ? strategicGoalScoreForThisStep : 0),
-		nextSteps['South'] + ('South' === strategicGoalDirection ? strategicGoalScoreForThisStep : 0),
-		nextSteps['West'] + ('West' === strategicGoalDirection ? strategicGoalScoreForThisStep : 0),
-		nextSteps['Stay']
-	);
-	//console.log(d, scoreForThisStep, '+', bestNextStepScore);
+		var nextSteps = {
+			North: evaluateMoveToPosition(helpers, updatedGameData, status, 'North', d),
+			East: evaluateMoveToPosition(helpers, updatedGameData, status, 'East', d),
+			South: evaluateMoveToPosition(helpers, updatedGameData, status, 'South', d),
+			West: evaluateMoveToPosition(helpers, updatedGameData, status, 'West', d),
+			Stay: evaluateMoveToPosition(helpers, updatedGameData, status, 'Stay', d)
+		};
+		nextSteps[strategicGoalDirection] += strategicGoalScoreForThisStep;
+		bestNextStepScore = Math.max(
+			nextSteps.North,
+			nextSteps.East,
+			nextSteps.South,
+			nextSteps.West,
+			nextSteps.Stay
+		);
+	} else {
+		bestNextStepScore = 0;
+	}
 	return scoreForThisStep + bestNextStepScore;
 }
 
@@ -188,11 +203,12 @@ function move(gameData, helpers) {
 	var strategicGoalDirection = directionToOverallStrategy(helpers, gameData.board, status);
 	var strategicGoalScoreForThisStep = GOAL_PROGRESSION_SCORE;
 	var curScore;
+	var dt = Date.now();
 
 	while (i < DIRECTIONS.length) {
 		if (DIRECTIONS[i] === 'Stay' || helpers.getTileNearby(gameData.board, status.distanceFromTop, status.distanceFromLeft, DIRECTIONS[i])) {
 			curScore = evaluateMoveToPosition(helpers, gameData, status, DIRECTIONS[i], 0);
-			curScore += (DIRECTIONS[i] === strategicGoalDirection ? strategicGoalScoreForThisStep : 0)
+			curScore += (DIRECTIONS[i] === strategicGoalDirection ? strategicGoalScoreForThisStep : 0);
 			if (curScore > bestScore) {
 				bestScore = curScore;
 				bestDirections = [DIRECTIONS[i]];
@@ -204,7 +220,8 @@ function move(gameData, helpers) {
 	}
 
 	// Choose randomly from all the best possible choices
-	console.log('Best directions(' + bestScore + '): ' + bestDirections);
+	//console.log('Best directions(' + bestScore + '): ' + bestDirections);
+	console.log('Evaluation took ' + (Date.now() - dt) + 'ms');
 	return bestDirections[~~(bestDirections.length * Math.random())];
 }
 
@@ -231,12 +248,21 @@ function Status(status) {
 	self.killCount = status.killCount || (status.heroesKilled?status.heroesKilled.length:0);
 	self.gravesRobbed = status.gravesRobbed; // Why do we care?
 	self._score = null;
-	self.score = function () {
+	self.score = function (baseStatus) {
 		if (this._score === null) {
+			// We want only the score of the delta
+			if (baseStatus) {
+				self.healthGiven -= baseStatus.healthGiven;
+				self.livesSaved -= baseStatus.livesSaved;
+				self.minesCaptured -= baseStatus.minesCaptured;
+				self.damageDone -= baseStatus.damageDone;
+				self.killCount -= baseStatus.killCount;
+				self.gravesRobbed -= baseStatus.gravesRobbed;
+			}
 			this._score = calculateStatusScore(this);
 		}
 		return this._score;
-	}
+	};
 	return self;
 }
 
@@ -263,38 +289,102 @@ function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, t
 }
 
 
-
+function updateAllOtherHeros(gameData, activeHeroCode, helpers) {
+	var hero, direction;
+	for (hero in gameData.heros) {
+		if (hero.code !== activeHeroCode && hero.health > 0) {
+			direction = getProbableHeroMove(hero, gameData, helpers);
+			handleHeroMove(gameData.board, hero, direction);
+		}
+	}
+}
 
 
 // Estimate the likely move of a hero
-function GetStrategyProbabilities(gameData, helpers) {
+function getProbableHeroMove(hero, gameData, helpers) {
 	'use strict';
-	var currentHero = gameData.activeHero;
-	var totalMoves = 4;
 	var moves = {};
-	var direction;
+	var i = 0;
+	var bestScore = -Infinity;
+	var bestDirections = [];
 
-	if (currentHero.health < Base_Health_Threshold) {
+	if (hero.health <= Base_Health_Threshold) {
 		// Assume that all heros will prioritize getting healed when very low on health
-		moves[helpers.findNearestHealthWell(gameData)] = 1;
-		return moves;
+		return helpers.findNearestHealthWell(gameData);
 	}
 
-	if (currentHero.health < Safe_Health_Threshold) {
+	if (hero.health < Safe_Health_Threshold) {
 		moves[helpers.findNearestHealthWell(gameData)] = 1;
-		++totalMoves;
 	}
 	moves[helpers.findNearestTeamMember(gameData)] += 1; 	// Priests
-	moves[helpers.findNearestEnemy(gameData)] += 1; 			// Unwise Assassins
-	moves[helpers.findNearestWeakerEnemy(gameData)] += 1; // Careful Assassins
+	moves[helpers.findNearestEnemy(gameData)] += 1; 		// Unwise Assassins
+	moves[helpers.findNearestWeakerEnemy(gameData)] += 1; 	// Careful Assassins
 	moves[helpers.findNearestNonTeamDiamondMine(gameData)] += 1; // Miners
-	for (direction in moves) {
-		moves[direction] /= totalMoves;
+	
+	while (i < moves.length) {
+		if (moves[i] > bestScore) {
+			bestScore = moves[i];
+			bestDirections = [i];
+		} else if (moves[i] === bestScore) {
+			bestDirections.push(i);
+		}
+		++i;
 	}
+
+	// Choose randomly from all the best possible choices
+	return bestDirections[~~(bestDirections.length * Math.random())];
 
 }
 
 
+function handleHeroMove(board, hero, direction) {
+  var tile = board.getTileNearby(hero.distanceFromTop, hero.distanceFromLeft, direction);
+  if (!tile) {
+  	tile = board.tiles[hero.distanceFromTop][hero.distanceFromLeft];
+  }
+
+  if (tile === false) {
+	return;
+  } else if (tile.type === 'Unoccupied') {
+  	swapTiles(board, tile, hero);
+  } else if (tile.type === 'DiamondMine') {
+	hero.health -= DIAMOND_MINE_CAPTURE_DAMAGE;
+	if (hero.health > 0) {
+	  tile.owner = hero;
+	}
+  } else if (tile.type === 'HealthWell') {
+	hero.health += HEALTH_WELL_HEAL_AMOUNT;
+  } else if (tile.type === 'Hero') {
+	if (tile.team !== hero.team) {
+	  tile.health -= HERO_FOCUSED_ATTACK_DAMAGE;
+	} else {
+	  tile.health += HERO_HEAL_AMOUNT;
+	}
+  }
+}
+
+function deepCopy(obj) {
+	if(obj === null || typeof(obj) !== 'object'){
+		return obj;
+	}
+	//make sure the returned object has the same prototype as the original
+	var ret = Object.create(obj.constructor.prototype);
+	for(var key in obj){
+		ret[key] = deepCopy(obj[key]);
+	}
+	return ret;
+}
+
+function swapTiles(board, a, b) {
+	var x = b.distanceFromLeft;
+	var y = b.distanceFromTop;
+	b.distanceFromTop = a.distanceFromTop;
+	b.distanceFromLeft = a.distanceFromLeft;
+	a.distanceFromTop = y;
+	a.distanceFromLeft = x;
+	board.tiles[y][x] = a;
+	board.tiles[b.distanceFromTop][b.distanceFromLeft] = b;
+}
 
 // Must be the last line
 module.exports = move;
