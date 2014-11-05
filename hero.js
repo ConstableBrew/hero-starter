@@ -8,8 +8,8 @@ var HEALTH_WELL_HEAL_AMOUNT = 30;
 var HERO_HEAL_AMOUNT = 40;
 
 var DIRECTIONS = ['North', 'East', 'South', 'West', 'Stay'];
-var MAX_DEPTH = 4;
-var MAX_ENEMY_DEPTH = 2;
+var MAX_DEPTH = 3;
+var MAX_ENEMY_DEPTH = 1;
 
 var GOAL_PROGRESSION_SCORE = 25; // Score for steps in the direction of our established strategic goal
 
@@ -42,9 +42,9 @@ function calculateStatusScore(status) {
 // are very low, tactical level. The direction returned by this function is used to add GOAL_PROGRESSION_SCORE
 // to the calculatedStatusScore.
 function directionToOverallStrategy(helpers, board, status) {
-	var NearestEnemy = function(enemyTile) {return enemyTile.type === 'Hero' && enemyTile.team !== status.team;};
+	var MainGoal = function(enemyTile) {return enemyTile.type === 'Hero' && enemyTile.team !== status.team;};
 	var NearestHealthWell = function(enemyTile) {return enemyTile.type === 'HealthWell';};
-	var strategy = NearestEnemy;
+	var strategy = MainGoal;
 	if (status.health < Safe_Health_Threshold) {
 		strategy = NearestHealthWell;
 	}
@@ -231,7 +231,8 @@ function move(gameData, helpers) {
 		if (DIRECTIONS[i] === 'Stay' || helpers.getTileNearby(gameData.board, status.distanceFromTop, status.distanceFromLeft, DIRECTIONS[i])) {
 			curScore = evaluateMoveToPosition(helpers, gameData, status, DIRECTIONS[i], 0);
 			curScore += (DIRECTIONS[i] === strategicGoalDirection ? GOAL_PROGRESSION_SCORE : 0);
-			console.log('Score for ' + DIRECTIONS[i] + ':', curScore);
+			// TODO: Consider making the direction selection probabilistic, weighted by scores
+			//console.log('Score for ' + DIRECTIONS[i] + ':', curScore);
 			if (curScore > bestScore) {
 				bestScore = curScore;
 				bestDirections = [DIRECTIONS[i]];
@@ -244,8 +245,8 @@ function move(gameData, helpers) {
 
 	// Choose randomly from all the best possible choices
 	direction = bestDirections[~~(bestDirections.length * Math.random())];
-	console.log('Best directions(' + bestScore.toString().substr(0,3) + '): ' + bestDirections, '+' + strategicGoalDirection, '>>>' + direction);
-	console.log('Evaluation took ' + (Date.now() - dt) + 'ms');
+	//console.log('Best directions(' + bestScore.toString().substr(0,3) + '): ' + bestDirections, '+' + strategicGoalDirection, '>>>' + direction);
+	//console.log('Evaluation took ' + (Date.now() - dt) + 'ms');
 	return direction;
 }
 
