@@ -116,7 +116,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 			status.health += HEALTH_WELL_HEAL_AMOUNT;
 			status.health = Math.min(status.health, 100); // Ensure we are accurate about how much healing is done
 
-		} else if (tile.type === 'Hero' && tile.getCode() !== status.code) {
+		} else if (tile.type === 'Hero' && tile.id !== status.id) {
 			if (tile.team !== status.team) {
 				status.damageDone += HERO_FOCUSED_ATTACK_DAMAGE;
 				action = 'Focused';
@@ -139,7 +139,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 					action += 'Save';
 				}
 			}
-		} else if (tile.type === 'Hero' && tile.getCode() === status.code) {
+		} else if (tile.type === 'Hero' && tile.id === status.id) {
 			action = 'Return';
 		}
 	}
@@ -170,7 +170,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 			
 		//console.log('Before:');
 		//gameData.board.inspect();
-		//console.log(d, (new Array(d+1)).join('    ') + status.getCode() + ' Moved ' + direction + ')');
+		//console.log(d, (new Array(d+1)).join('    ') + status.id + ' Moved ' + direction + ')');
 
 			if (heroMoved) {
 				
@@ -179,7 +179,7 @@ function evaluateMoveToPosition(helpers, gameData, startingStatus, direction, de
 					updatedGameData.board.tiles[startingStatus.distanceFromTop][startingStatus.distanceFromLeft]
 				);
 			}
-			updateAllOtherHeros(updatedGameData, status.getCode(), helpers);
+			updateAllOtherHeros(updatedGameData, status.id, helpers);
 			
 		//console.log('After:');
 		//updatedGameData.board.inspect();
@@ -260,8 +260,7 @@ function Status(status) {
 	// Simplification of hero's status
 	// status parameter may be a Hero object or a Status object
 	var self = {};
-	self.code = status.code || ((status.getCode !== 'undefined')?status.getCode():'xx');
-	self.getCode = function(){ return self.code; };
+	self.id = status.id;
 	self.team = status.team;
 	self.distanceFromTop = status.distanceFromTop;
 	self.distanceFromLeft = status.distanceFromLeft;
@@ -318,12 +317,12 @@ function getAdjacentEnemies(helpers, board, distanceFromTop, distanceFromLeft, t
 function updateAllOtherHeros(gameData, activeHeroCode, helpers) {
 	var hero, direction;
 	gameData.heroes.forEach(function(hero) {
-		if (hero.getCode() !== activeHeroCode && hero.health > 0) {
+		if (hero.id !== activeHeroCode && hero.health > 0) {
 			direction = getProbableHeroMove(hero, gameData, helpers);
-		//console.log('Estimated ' + hero.getCode() + ' moved ' + direction);
+		//console.log('Estimated ' + hero.id + ' moved ' + direction);
 			handleHeroMove(gameData.board, hero, direction);
 		} else {
-		//console.log('Skipping', hero.getCode());
+		//console.log('Skipping', hero.id);
 		}
 	});
 }
@@ -365,7 +364,7 @@ function getProbableHeroMove(hero, gameData, helpers) {
 
 	// Choose randomly from all the best possible choices
 	direction = bestDirections[~~(bestDirections.length * Math.random())];
-//console.log(hero.getCode() + ' Predicting(' + bestScore.toString().substr(0,3) + '): ' + bestDirections, '>>>' + direction);
+//console.log(hero.id + ' Predicting(' + bestScore.toString().substr(0,3) + '): ' + bestDirections, '>>>' + direction);
 	return direction;
 
 }
